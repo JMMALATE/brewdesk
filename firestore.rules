@@ -1,0 +1,86 @@
+rules_version = '2';
+
+// Role-based access for BrewDesk.
+// Roles live in /users/{uid}.role: "owner" | "manager" | "barista".
+// Anything that changes money or stock (orders, stock movements, counters)
+// is written only by Cloud Functions, which bypass these rules.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function isStaff() {
+      return signedIn()
+        && exists(profilePath())
+        && get(profilePath()).data.active == true;
+    }
+
+    function hasRole(roles) {
+      return isStaff() && get(profilePath()).data.role in roles;
+    }
+
+    function isManager() {
+      return hasRole(['manager', 'owner']);
+    }
+
+    function isOwner() {
+      return hasRole(['owner']);
+    }
+
+    // Staff profiles: everyone can read their own; managers can read all.
+    // Accounts are created and changed only by the owner-only Cloud Functions
+    // (createStaff / updateStaff), which keep Firebase Auth and this profile in sync.
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isManager());
+      allow write: if false;
+    }
+
+    // Menu
+    match /categories/{id} {
+      allow read: if isStaff();
+      allow write: if isManager();
+    }
+
+    match /menuItems/{id} {
+      allow read: if isStaff();
+      allow create, update: if isManager()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0;
+      allow delete: if isManager();
+    }
+
+    // Inventory (stock levels change through Cloud Functions or manager edits)
+    match /ingredients/{id} {
+      allow read: if isStaff();
+      allow write: if isManager();
+    }
+
+    match /stockMovements/{id} {
+      allow read: if isManager();
+      allow write: if false;
+    }
+
+    // Sales — created only by the completeOrder Cloud Function
+    match /orders/{id} {
+      allow read: if isStaff();
+      allow write: if false;
+    }
+
+    match /counters/{id} {
+      allow read, write: if false;
+    }
+
+    match /settings/{id} {
+      allow read: if isStaff();
+      allow write: if isOwner();
+    }
+  }
+}

@@ -1,0 +1,15 @@
+node_modules/
+functions/node_modules/
+dist/
+.env.local
+.env.*.local
+*-debug.log
+.firebase/
+emulator-data/
+.DS_Store
+
+# Never commit Firebase service account keys
+*serviceAccount*.json
+*service-account*.json
+*firebase-adminsdk*.json
+.vercel
