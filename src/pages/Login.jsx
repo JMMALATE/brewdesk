@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { NoAccess } from '../components/ProtectedRoute.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { toLoginEmail } from '../lib/username.js';
 
 // Created by `npm run seed` (emulator only).
 const DEMO_ACCOUNTS = [
@@ -43,7 +44,7 @@ export default function Login() {
     setError('');
     setBusy(true);
     try {
-      await login(emailValue.trim(), passwordValue);
+         await login(toLoginEmail(emailValue), passwordValue);
     } catch (err) {
       setError(friendlyError(err.code));
     } finally {
@@ -67,10 +68,12 @@ export default function Login() {
           }}
         >
           <label className="field">
-            <span>Email</span>
+            <span>Username or email</span>
             <input
               className="input"
-              type="email"
+              type="text"
+              autoCapitalize="none"
+              spellCheck={false}
               autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}

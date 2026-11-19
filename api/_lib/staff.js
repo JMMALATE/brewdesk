@@ -6,6 +6,23 @@ import { ApiError, STAFF_ROLES } from './http.js';
 // Accounts are created with the Admin SDK: no sign-up page and no verification email.
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Username logins are stored as an internal email. Keep in sync with src/lib/username.js.
+const USERNAME_DOMAIN = 'staff.brewdesk.local';
+const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,29}$/;
+
+/** Returns { email, username } from either a username or a real email. */
+function cleanLogin(data) {
+  if (typeof data.username === 'string' && data.username.trim()) {
+    const username = data.username.trim().toLowerCase();
+    if (!USERNAME_RE.test(username)) {
+      throw new ApiError(400, 'Username must be 3–30 characters: letters, numbers, dot, dash or underscore.');
+    }
+    return { email: `${username}@${USERNAME_DOMAIN}`, username };
+  }
+  const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
+  if (!EMAIL_RE.test(email)) throw new ApiError(400, 'Enter a valid email address or a username.');
+  return { email, username: null };
+}
 
 function cleanName(value) {
   const name = typeof value === 'string' ? value.trim() : '';
@@ -34,8 +51,7 @@ export async function createStaff({ user: owner, data }) {
   const name = cleanName(data.name);
   const role = cleanRole(data.role);
   const password = cleanPassword(data.password);
-  const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
-  if (!EMAIL_RE.test(email)) throw new ApiError(400, 'Enter a valid email address.');
+  const { email, username } = cleanLogin(data);
 
   let created;
   try {
@@ -43,7 +59,7 @@ export async function createStaff({ user: owner, data }) {
     created = await adminAuth.createUser({ email, password, displayName: name, emailVerified: true });
   } catch (err) {
     if (err.code === 'auth/email-already-exists') {
-      throw new ApiError(409, 'An account with this email already exists.');
+      throw new ApiError(409, username ? 'That username is already taken.' : 'An account with this email already exists.');
     }
     throw err;
   }
@@ -51,6 +67,7 @@ export async function createStaff({ user: owner, data }) {
   await db.doc(`users/${created.uid}`).set({
     name,
     email,
+    username,
     role,
     active: true,
     createdBy: owner.id,

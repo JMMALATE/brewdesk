@@ -7,6 +7,7 @@ import { callApi } from '../lib/api.js';
 import { useCollection } from '../hooks/useCollection.js';
 import { formatDateTime } from '../lib/format.js';
 import { ALL_STAFF } from '../lib/roles.js';
+import { loginLabel, USERNAME_RE } from '../lib/username.js';
 
 const createStaff = (data) => callApi('create-staff', data);
 const updateStaff = (data) => callApi('update-staff', data);
@@ -77,7 +78,7 @@ export default function Staff() {
             <thead>
               <tr>
                 <th>Name</th>
-                <th>Email</th>
+                <th>Login</th>
                 <th>Role</th>
                 <th>Status</th>
                 <th>Added</th>
@@ -94,7 +95,7 @@ export default function Staff() {
                       {member.name}
                       {isMe && <span className="muted small"> (you)</span>}
                     </td>
-                    <td>{member.email}</td>
+                    <td>{loginLabel(member)}</td>
                     <td>
                       <select
                         className="input input-sm"
@@ -149,7 +150,14 @@ export default function Staff() {
 }
 
 function AddStaffModal({ onClose }) {
-  const [form, setForm] = useState({ name: '', email: '', role: 'barista', password: generatePassword() });
+  const [form, setForm] = useState({
+    name: '',
+    loginType: 'username',
+    username: '',
+    email: '',
+    role: 'barista',
+    password: generatePassword(),
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [created, setCreated] = useState(null);
@@ -157,12 +165,17 @@ function AddStaffModal({ onClose }) {
 
   async function submit(e) {
     e.preventDefault();
+    const username = form.username.trim().toLowerCase();
+    if (form.loginType === 'username' && !USERNAME_RE.test(username)) {
+      return setError('Username must be 3–30 characters: letters, numbers, dot, dash or underscore.');
+    }
     if (form.password.length < 8) return setError('Password must be at least 8 characters.');
     setSaving(true);
     setError('');
     try {
-      await createStaff({ ...form, name: form.name.trim(), email: form.email.trim() });
-      setCreated(form);
+      const login = form.loginType === 'username' ? { username } : { email: form.email.trim() };
+      await createStaff({ name: form.name.trim(), role: form.role, password: form.password, ...login });
+      setCreated({ ...form, login: form.loginType === 'username' ? username : form.email.trim() });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -175,17 +188,13 @@ function AddStaffModal({ onClose }) {
       <Modal
         title="Account created"
         onClose={onClose}
-        footer={
-          <button className="btn btn-primary" onClick={onClose}>
-            Done
-          </button>
-        }
+        footer={<button className="btn btn-primary" onClick={onClose}>Done</button>}
       >
         <p>Give these login details to {created.name}:</p>
         <div className="credentials">
           <div>
-            <span className="muted small">Email</span>
-            <strong>{created.email}</strong>
+            <span className="muted small">{created.loginType === 'username' ? 'Username' : 'Email'}</span>
+            <strong>{created.login}</strong>
           </div>
           <div>
             <span className="muted small">Temporary password</span>
@@ -203,9 +212,7 @@ function AddStaffModal({ onClose }) {
       onClose={onClose}
       footer={
         <>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
           <button type="submit" form="staff-form" className="btn btn-primary" disabled={saving}>
             {saving ? 'Creating…' : 'Create account'}
           </button>
@@ -217,16 +224,40 @@ function AddStaffModal({ onClose }) {
           <span>Full name</span>
           <input className="input" value={form.name} onChange={(e) => set('name', e.target.value)} required autoFocus />
         </label>
-        <label className="field">
-          <span>Email (used to log in)</span>
-          <input
-            className="input"
-            type="email"
-            value={form.email}
-            onChange={(e) => set('email', e.target.value)}
-            required
-          />
-        </label>
+
+        <div className="field">
+          <span>Logs in with</span>
+          <div className="segmented">
+            <button type="button" className={form.loginType === 'username' ? 'active' : ''} onClick={() => set('loginType', 'username')}>
+              Username
+            </button>
+            <button type="button" className={form.loginType === 'email' ? 'active' : ''} onClick={() => set('loginType', 'email')}>
+              Email
+            </button>
+          </div>
+        </div>
+
+        {form.loginType === 'username' ? (
+          <label className="field">
+            <span>Username</span>
+            <input
+              className="input"
+              value={form.username}
+              onChange={(e) => set('username', e.target.value.toLowerCase().replace(/\s/g, ''))}
+              placeholder="e.g. ana"
+              autoCapitalize="none"
+              spellCheck={false}
+              required
+            />
+            <span className="muted small">3–30 characters: letters, numbers, dot, dash or underscore. No email needed.</span>
+          </label>
+        ) : (
+          <label className="field">
+            <span>Email</span>
+            <input className="input" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} required />
+          </label>
+        )}
+
         <label className="field">
           <span>Role</span>
           <select className="input" value={form.role} onChange={(e) => set('role', e.target.value)}>
@@ -237,21 +268,15 @@ function AddStaffModal({ onClose }) {
             ))}
           </select>
         </label>
+
         <label className="field">
           <span>Temporary password</span>
           <div className="row">
-            <input
-              className="input"
-              value={form.password}
-              onChange={(e) => set('password', e.target.value)}
-              minLength={8}
-              required
-            />
-            <button type="button" className="btn btn-ghost" onClick={() => set('password', generatePassword())}>
-              New
-            </button>
+            <input className="input" value={form.password} onChange={(e) => set('password', e.target.value)} minLength={8} required />
+            <button type="button" className="btn btn-ghost" onClick={() => set('password', generatePassword())}>New</button>
           </div>
         </label>
+
         {error && <div className="alert">{error}</div>}
       </form>
     </Modal>
