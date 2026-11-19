@@ -44,8 +44,13 @@ async function requireStaff(req, roles) {
   let decoded;
   try {
     decoded = await adminAuth.verifyIdToken(token, true); // true = reject signed-out / disabled users
-  } catch {
-    throw new ApiError(401, 'Your session has expired. Please sign in again.');
+  } catch (err) {
+    console.error('verifyIdToken failed:', err.code, err.message);
+    const sessionProblems = ['auth/id-token-expired', 'auth/id-token-revoked', 'auth/user-disabled'];
+    if (sessionProblems.includes(err.code)) {
+      throw new ApiError(401, 'Your session has expired. Please sign in again.');
+    }
+    throw new ApiError(500, `Server could not verify your login (${err.code || 'unknown'}). Check the Firebase Admin settings.`);
   }
 
   const snap = await db.doc(`users/${decoded.uid}`).get();
